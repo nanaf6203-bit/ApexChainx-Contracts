@@ -409,4 +409,39 @@ impl SLACalculatorContract {
 
         env.storage().instance().set(&STATS_KEY, &stats);
     }
+
+    // -------------------------------------------------------------------
+    // #33 - History & Compaction (Admin only)
+    // -------------------------------------------------------------------
+
+    /// Returns the raw log of recent SLA calculations stored on-chain.
+    pub fn get_history(env: Env) -> Result<Vec<SLAResult>, SLAError> {
+        Self::check_version(&env)?;
+        Ok(env.storage().instance().get(&HISTORY_KEY).unwrap_or_else(|| Vec::new(&env)))
+    }
+
+    /// Prunes the SLA calculation history to prevent indefinite storage growth.
+    /// `keep_latest` dictates how many of the most recent records to retain.
+    pub fn prune_history(env: Env, caller: Address, keep_latest: u32) -> Result<(), SLAError> {
+        Self::check_version(&env)?;
+        Self::require_admin(&env, &caller)?;
+
+        let history: Vec<SLAResult> = env.storage().instance().get(&HISTORY_KEY).unwrap_or_else(|| Vec::new(&env));
+        let len = history.len();
+
+        if len > keep_latest {
+            let remove_count = len - keep_latest;
+            let mut new_history = Vec::new(&env);
+            
+            // Rebuild the vector keeping only the most recent entries
+            for i in remove_count..len {
+                new_history.push_back(history.get(i).unwrap());
+            }
+            
+            env.storage().instance().set(&HISTORY_KEY, &new_history);
+            env.events().publish((EVENT_PRUNED, caller), (remove_count, keep_latest));
+        }
+
+        Ok(())
+    }
 }

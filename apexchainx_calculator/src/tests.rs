@@ -577,4 +577,63 @@ fn test_stress_1000_calculations_mixed_severities() {
         "Average CPU instructions per call exceeded safe bounds: {}", 
         avg_cpu_per_call
     );
+
+    // ============================================================
+// #33 – Storage Compaction Strategy Tests
+// ============================================================
+
+#[test]
+fn test_history_records_calculations() {
+    let (_env, client, actors) = setup();
+
+    client.calculate_sla(&actors.operator, &symbol_short!("H001"), &symbol_short!("critical"), &5);
+    client.calculate_sla(&actors.operator, &symbol_short!("H002"), &symbol_short!("high"), &25);
+
+    let history = client.get_history();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history.get(0).unwrap().outage_id, symbol_short!("H001"));
+    assert_eq!(history.get(1).unwrap().outage_id, symbol_short!("H002"));
+}
+
+#[test]
+fn test_admin_can_prune_history() {
+    let (_env, client, actors) = setup();
+
+    // Generate 5 records
+    for i in 0..5 {
+        client.calculate_sla(&actors.operator, &symbol_short!("H_GEN"), &symbol_short!("low"), &10);
+    }
+
+    let history_before = client.get_history();
+    assert_eq!(history_before.len(), 5);
+
+    // Prune down to the latest 2
+    client.prune_history(&actors.admin, &2);
+
+    let history_after = client.get_history();
+    assert_eq!(history_after.len(), 2, "History should be truncated to 2 items");
+}
+
+#[test]
+#[should_panic]
+fn test_operator_cannot_prune_history() {
+    let (_env, client, actors) = setup();
+    client.prune_history(&actors.operator, &0);
+}
+
+#[test]
+fn test_prune_history_preserves_latest_records_accurately() {
+    let (_env, client, actors) = setup();
+
+    client.calculate_sla(&actors.operator, &symbol_short!("ID_1"), &symbol_short!("low"), &10);
+    client.calculate_sla(&actors.operator, &symbol_short!("ID_2"), &symbol_short!("low"), &10);
+    client.calculate_sla(&actors.operator, &symbol_short!("ID_3"), &symbol_short!("low"), &10);
+
+    // Keep only the latest 1. ID_1 and ID_2 should be dropped, ID_3 retained.
+    client.prune_history(&actors.admin, &1);
+
+    let history = client.get_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.get(0).unwrap().outage_id, symbol_short!("ID_3"), "Did not retain the correct recent record");
+}
 }
