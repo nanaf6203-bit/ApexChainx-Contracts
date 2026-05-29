@@ -118,6 +118,7 @@ pub struct SLAResult {
     pub amount: i128,         // negative = penalty, positive = reward
     pub payment_type: Symbol, // "rew" | "pen"
     pub rating: Symbol,       // "top" | "excel" | "good" | "poor"
+    pub config_version_hash: u64, // deterministic binding to config used for evaluation
     pub recorded_at: u64,     // SC-063: ledger timestamp at calculation time
 }
 
@@ -148,6 +149,7 @@ pub struct SLAResultSchema {
     pub rating_excellent: Symbol,
     pub rating_good: Symbol,
     pub rating_poor: Symbol,
+    pub includes_config_version_hash: bool,
 }
 
 /// #60 – Single introspection call for backend clients.
@@ -565,7 +567,7 @@ impl SLACalculatorContract {
     ) -> Result<(), SLAError> {
         Self::check_version(&env)?;
         Self::require_admin(&env, &caller)?; // #28 – admin role enforced
-        
+
         // #70 – Validate configuration parameters
         Self::validate_config(&severity, threshold_minutes, penalty_per_minute, reward_base)?;
 
@@ -633,60 +635,12 @@ impl SLACalculatorContract {
     ///
     /// The hash uses a polynomial rolling hash with a prime base and modulus
     /// to provide strong collision resistance while remaining deterministic.
-    /// It processes all severity config fields in canonical order 
+    /// It processes all severity config fields in canonical order
     /// (critical → high → medium → low) and is stable across repeated reads
     /// when config is unchanged.
     pub fn get_config_version_hash(env: Env) -> Result<u64, SLAError> {
         Self::check_version(&env)?;
-        let severities = [
-            symbol_short!("critical"),
-            symbol_short!("high"),
-            symbol_short!("medium"),
-            symbol_short!("low"),
-        ];
-        
-        // Polynomial rolling hash parameters for good collision resistance
-        const BASE: u64 = 91138233; // Large prime number
-        const MODULUS: u64 = (1u64 << 63) - 25; // Large prime (Mersenne-like)
-        
-        let mut hash: u64 = 1; // Start with non-zero seed
-        let mut power: u64 = 1;
-        
-        for sev in severities {
-            let cfg = Self::load_config(&env, &sev)?;
-            
-            // Mix each field with position-dependent weights
-            let field_hash = hash
-                .wrapping_mul(BASE)
-                .wrapping_add(cfg.threshold_minutes as u64)
-                .wrapping_mul(power)
-                % MODULUS;
-            
-            hash = field_hash;
-            power = power.wrapping_mul(BASE) % MODULUS;
-            
-            // Add penalty_per_minute with different weight
-            hash = hash
-                .wrapping_mul(BASE)
-                .wrapping_add(cfg.penalty_per_minute as u64)
-                .wrapping_mul(power)
-                % MODULUS;
-            
-            power = power.wrapping_mul(BASE) % MODULUS;
-            
-            // Add reward_base with different weight
-            hash = hash
-                .wrapping_mul(BASE)
-                .wrapping_add(cfg.reward_base as u64)
-                .wrapping_mul(power)
-                % MODULUS;
-            
-            power = power.wrapping_mul(BASE) % MODULUS;
-        }
-        
-        // Final mixing to improve distribution
-        hash = hash.wrapping_mul(BASE).wrapping_add(0x9e3779b97f4a7c15u64) % MODULUS;
-        Ok(hash)
+        Self::compute_config_version_hash(&env)
     }
 
     pub fn get_result_schema(env: Env) -> Result<SLAResultSchema, SLAError> {
@@ -702,6 +656,7 @@ impl SLACalculatorContract {
             rating_excellent: symbol_short!("excel"),
             rating_good: symbol_short!("good"),
             rating_poor: symbol_short!("poor"),
+            includes_config_version_hash: true,
         })
     }
 
@@ -758,9 +713,16 @@ impl SLACalculatorContract {
         Self::check_version(&env)?;
         // We bypass pause and operator checks to allow continuous, public verification
         let cfg = Self::load_config(&env, &severity)?;
+        let config_version_hash = Self::compute_config_version_hash(&env)?;
 
-        // Delegate to pure internal math; recorded_at=0 for view-only calls
-        Ok(Self::compute_result(outage_id, mttr_minutes, &cfg, 0))
+        // Delegate to pure internal math without mutating state or emitting events.
+        Ok(Self::compute_result(
+            outage_id,
+            mttr_minutes,
+            &cfg,
+            config_version_hash,
+            0,
+        ))
     }
 
     // -------------------------------------------------------------------
@@ -779,7 +741,14 @@ impl SLACalculatorContract {
         Self::require_operator(&env, &caller)?; // #28
 
         let cfg = Self::load_config(&env, &severity)?;
-        let result = Self::compute_result(outage_id.clone(), mttr_minutes, &cfg, env.ledger().timestamp());
+        let config_version_hash = Self::compute_config_version_hash(&env)?;
+        let result = Self::compute_result(
+            outage_id.clone(),
+            mttr_minutes,
+            &cfg,
+            config_version_hash,
+            env.ledger().timestamp(),
+        );
         let mut history: Vec<SLAResult> = env
             .storage()
             .instance()
@@ -825,8 +794,16 @@ impl SLACalculatorContract {
     // -------------------------------------------------------------------
 
     /// Pure helper to generate the SLAResult deterministically.
-    /// `recorded_at` is the ledger timestamp at call time (0 in view/audit mode).
-    fn compute_result(outage_id: Symbol, mttr_minutes: u32, cfg: &SLAConfig, recorded_at: u64) -> SLAResult {
+    /// `config_version_hash` binds the result to the exact config snapshot used
+    /// during evaluation. `recorded_at` is the ledger timestamp at call time
+    /// (0 in view/audit mode).
+    fn compute_result(
+        outage_id: Symbol,
+        mttr_minutes: u32,
+        cfg: &SLAConfig,
+        config_version_hash: u64,
+        recorded_at: u64,
+    ) -> SLAResult {
         let threshold = cfg.threshold_minutes;
 
         // Case 1: SLA violated → penalty
@@ -842,6 +819,7 @@ impl SLACalculatorContract {
                 amount: -penalty,
                 payment_type: symbol_short!("pen"),
                 rating: symbol_short!("poor"),
+                config_version_hash,
                 recorded_at,
             }
         } else {
@@ -870,6 +848,7 @@ impl SLACalculatorContract {
                 amount: reward,
                 payment_type: symbol_short!("rew"),
                 rating,
+                config_version_hash,
                 recorded_at,
             }
         }
@@ -998,6 +977,48 @@ impl SLACalculatorContract {
     }
 
     /// Shared config lookup that borrows env (avoids consuming it).
+    fn compute_config_version_hash(env: &Env) -> Result<u64, SLAError> {
+        let severities = [
+            symbol_short!("critical"),
+            symbol_short!("high"),
+            symbol_short!("medium"),
+            symbol_short!("low"),
+        ];
+
+        const BASE: u64 = 91138233;
+        const MODULUS: u64 = (1u64 << 63) - 25;
+
+        let mut hash: u64 = 1;
+        let mut power: u64 = 1;
+
+        for sev in severities {
+            let cfg = Self::load_config(env, &sev)?;
+
+            hash = hash
+                .wrapping_mul(BASE)
+                .wrapping_add(cfg.threshold_minutes as u64)
+                .wrapping_mul(power)
+                % MODULUS;
+            power = power.wrapping_mul(BASE) % MODULUS;
+
+            hash = hash
+                .wrapping_mul(BASE)
+                .wrapping_add(cfg.penalty_per_minute as u64)
+                .wrapping_mul(power)
+                % MODULUS;
+            power = power.wrapping_mul(BASE) % MODULUS;
+
+            hash = hash
+                .wrapping_mul(BASE)
+                .wrapping_add(cfg.reward_base as u64)
+                .wrapping_mul(power)
+                % MODULUS;
+            power = power.wrapping_mul(BASE) % MODULUS;
+        }
+
+        Ok(hash.wrapping_mul(BASE).wrapping_add(0x9e3779b97f4a7c15u64) % MODULUS)
+    }
+
     fn load_config(env: &Env, severity: &Symbol) -> Result<SLAConfig, SLAError> {
         let configs: Map<Symbol, SLAConfig> = env
             .storage()
