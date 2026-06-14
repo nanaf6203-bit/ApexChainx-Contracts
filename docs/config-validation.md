@@ -173,41 +173,46 @@ let result = calculate_sla_view(
 - [ ] Deploy during low-traffic period
 - [ ] Monitor violation rates for 24h post-change
 
-## Example Valid Configurations
+## Examples
+
+### Valid Configurations
 
 ```rust
-// Valid critical configuration
-set_config(admin, critical, 30, 150, 1000)
+// Critical: aggressive response with high penalty
+set_config(admin, critical, 30, 150, 1000);
 
-// Valid high configuration  
-set_config(admin, high, 45, 75, 800)
+// High: balanced response with moderate penalty
+set_config(admin, high, 45, 75, 800);
 
-// Valid medium configuration
-set_config(admin, medium, 90, 30, 600)
+// Medium: standard response with reasonable penalty
+set_config(admin, medium, 90, 30, 600);
 
-// Valid low configuration
-set_config(admin, low, 180, 15, 500)
+// Low: relaxed response with minimal penalty
+set_config(admin, low, 180, 15, 500);
 ```
 
-## Example Invalid Configurations
+### Invalid Configurations
 
 ```rust
-// Invalid: threshold too high for critical
-set_config(admin, critical, 120, 100, 750) // InvalidThreshold
+// ERROR: threshold too high for critical (max 60)
+set_config(admin, critical, 120, 100, 750);  // → InvalidThreshold
 
-// Invalid: penalty too low for high severity
-set_config(admin, high, 30, 10, 750) // InvalidPenalty
+// ERROR: penalty too low for high (min 25)
+set_config(admin, high, 30, 10, 750);         // → InvalidPenalty
 
-// Invalid: negative reward
-set_config(admin, medium, 60, 25, -100) // InvalidReward
+// ERROR: negative reward not allowed
+set_config(admin, medium, 60, 25, -100);      // → InvalidReward
 
-// Invalid: unsupported severity
-set_config(admin, urgent, 15, 100, 750) // InvalidSeverity
+// ERROR: unsupported severity level
+set_config(admin, urgent, 15, 100, 750);      // → InvalidSeverity
 ```
 
 ## Implementation Notes
 
-- Validation occurs before any state changes
-- All validation rules are enforced at the contract level
-- The contract emits events for successful configuration updates
-- Failed validations do not emit events or consume gas beyond the validation check
+| Property | Detail |
+|----------|--------|
+| Validation timing | Occurs before any state changes — no partial updates |
+| Enforcement level | All rules enforced at the contract level |
+| Success events | Successful config updates emit versioned `cfg_upd` events |
+| Failure behavior | Failed validations do not emit events or consume extra gas |
+| Determinism | Same invalid inputs always produce same error codes |
