@@ -1,26 +1,48 @@
-# ApexChainx Smart Contracts (apexchainx-contracts) – Codex Context
+# ApexChainx Smart Contracts — Codex Context
 
-## Overview
+> **Technical deep-dive:** Architecture, constraints, event conventions, and
+> integration guidance for the ApexChainx Soroban smart contract ecosystem.
 
-This repository contains Soroban smart contracts used by ApexChainx to:
+## Table of Contents
 
-- calculate SLA penalties and rewards
-- execute blockchain-based payments
-- manage escrow logic
-- handle multi-party settlements
-
-These contracts run on the Stellar network and are invoked by the backend.
-
-Reference: :contentReference[oaicite:0]{index=0}
+- [Overview](#overview)
+- [Technology Stack](#technology-stack)
+- [Core Contracts](#core-contracts)
+- [Architecture](#architecture)
+- [Constraints & Design Principles](#constraints--design-principles)
+- [Critical Logic: SLA Calculation](#critical-logic-sla-calculation)
+- [Risk Assessment](#risk-assessment)
+- [Coding Standards](#coding-standards)
+- [Testing Requirements](#testing-requirements)
+- [Cross-Repo Dependencies](#cross-repo-dependencies)
+- [Backend-Facing Result Schema](#backend-facing-result-schema)
+- [Event Conventions](#event-conventions)
+- [SC-097: Event Replay & Recovery](#sc-097-event-replay--recovery)
 
 ---
 
-## Tech Stack
+## Overview
 
-- Language: Rust
-- Framework: Soroban SDK
-- Blockchain: Stellar (Soroban)
-- Build: cargo + wasm32 target
+This repository contains Soroban smart contracts that power the ApexChainx
+platform. These contracts execute on the **Stellar network** and are invoked
+exclusively through the backend API layer.
+
+### Primary Responsibilities
+
+| Function | Description |
+|----------|-------------|
+| SLA Calculation | Deterministic penalty/reward computation based on service metrics |
+| Payment Escrow | Lock and conditionally release Stellar token payments |
+| Multi-Party Settlement | Split shared outage costs between multiple parties |
+
+### Invocation Model
+
+```
+Backend API → Contract Invocation → Result Processing → Payment Execution
+```
+
+**Key constraint:** Contracts are never called directly by the frontend.
+All interactions go through the backend bridge.
 
 ---
 
