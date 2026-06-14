@@ -18,22 +18,62 @@ pub mod version_negotiation;
 pub mod coordination_harness;
 
 // -----------------------------------------------------------------------
-// Storage keys
+// Storage Keys
 // -----------------------------------------------------------------------
+//
+// These constants define all on-chain storage keys used by the contract.
+// Each key maps to a specific semantic domain. Keys must be:
+//   - Unique (no duplicate semantic domains)
+//   - Stable across contract upgrades (new versions add new keys)
+//   - Within the 9-character Symbol limit for Soroban
+//
+// References: Issue numbers track the original feature requirements.
+
+/// Admin address — set during initialize, governs config and roles.
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
-const OPERATOR_KEY: Symbol = symbol_short!("OPERATOR"); // #28
-const PENDING_ADMIN_KEY: Symbol = symbol_short!("PADMIN"); // #63
-const PENDING_OP_KEY: Symbol = symbol_short!("POP"); // #64
+
+/// Operator address — authorized to call calculate_sla. (#28)
+const OPERATOR_KEY: Symbol = symbol_short!("OPERATOR");
+
+/// Pending admin for two-step transfer. (#63)
+const PENDING_ADMIN_KEY: Symbol = symbol_short!("PADMIN");
+
+/// Pending operator for two-step handoff. (#64)
+const PENDING_OP_KEY: Symbol = symbol_short!("POP");
+
+/// Map of severity -> SLAConfig for all configured severity levels.
 const CONFIG_KEY: Symbol = symbol_short!("CONFIG");
-const PAUSED_KEY: Symbol = symbol_short!("PAUSED"); // #27
-const PAUSE_INFO_KEY: Symbol = symbol_short!("PAUSEINF"); // #66
-const STATS_KEY: Symbol = symbol_short!("STATS"); // #29
+
+/// Boolean flag: true when contract is paused. (#27)
+const PAUSED_KEY: Symbol = symbol_short!("PAUSED");
+
+/// Pause metadata (reason, timestamp, caller). (#66)
+const PAUSE_INFO_KEY: Symbol = symbol_short!("PAUSEINF");
+
+/// Cumulative SLA statistics (SLAStats struct). (#29)
+const STATS_KEY: Symbol = symbol_short!("STATS");
+
+/// Ordered list of historical SLAResult entries.
 const HISTORY_KEY: Symbol = symbol_short!("HIST");
+
+/// Current on-chain storage schema version number.
 const STORAGE_VERSION_KEY: Symbol = symbol_short!("VER");
+
+/// The storage schema version this contract binary expects.
+/// Incremented when breaking state changes are introduced.
 const STORAGE_VERSION: u32 = 1;
+
+/// Version of the SLAResult schema exposed via get_result_schema().
+/// Incremented when result encoding changes in a breaking way.
 const RESULT_SCHEMA_VERSION: u32 = 1;
-const MAX_HISTORY_SIZE: u32 = 1000; // SC-062: bounded retention cap
-const RETENTION_LIMIT_KEY: Symbol = symbol_short!("RETLIM"); // SC-013: configurable retention
+
+/// Hard upper bound on retained history entries. (SC-062)
+/// Configurable down to 1 via set_retention_limit().
+const MAX_HISTORY_SIZE: u32 = 1000;
+
+/// Optional configurable retention limit override. (SC-013)
+/// When set, overrides MAX_HISTORY_SIZE for history trimming.
+const RETENTION_LIMIT_KEY: Symbol = symbol_short!("RETLIM");
 
 // -----------------------------------------------------------------------
 // Events
