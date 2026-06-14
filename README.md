@@ -13,18 +13,29 @@
 
 This repository is the execution-layer side of the 3-repo architecture:
 
-- `apexchainx-fe` -> frontend
-- `apexchainx-be` -> backend and integration layer
-- `apexchainx-contracts` -> Soroban smart contracts
+- **apexchainx-fe** — Frontend application (React/TypeScript)
+- **apexchainx-be** — Backend API and contract integration layer
+- **apexchainx-contracts** — Soroban smart contracts (this repository)
 
-System flow:
+## System Architecture
 
-`User -> FE -> BE -> Contracts -> BE -> FE`
+### Data Flow
 
-Important rule:
+```
+  User
+   |
+   v
+┌─────────┐     ┌─────────┐     ┌──────────────┐
+│   FE    │ ──→ │   BE    │ ──→ │  Contracts   │
+│ (React) │ ←── │ (API)   │ ←── │  (Soroban)   │
+└─────────┘     └─────────┘     └──────────────┘
+```
 
-- contracts are not called directly by the frontend
-- the backend is responsible for invoking contracts and translating results back to the UI
+### Architectural Rules
+
+1. **Frontend never calls contracts directly** — all contract invocations go through the backend API layer.
+2. **Backend is the sole bridge** — responsible for translating contract results into frontend-friendly responses.
+3. **Contracts are execution-layer only** — pure deterministic computation with no external dependencies.
 
 ## Overview
 
