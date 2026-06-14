@@ -1,3 +1,30 @@
+//! Canonical Symbol constants used across the contract ecosystem.
+//!
+//! This module centralises all Symbol constants used for storage keys, event
+//! names, result status values, payment types, rating tiers, and severity
+//! levels. Centralising these constants ensures:
+//!
+//! 1. **Consistency** — The same Symbol is used everywhere it's referenced
+//! 2. **Auditability** — A single location to review all on-chain identifiers
+//! 3. **Collision prevention** — All constants are defined together, making
+//!    accidental duplicates immediately visible
+//!
+//! # Symbol Categories
+//!
+//! | Category | Prefix | Used For |
+//! |----------|--------|----------|
+//! | Storage Keys | `KEY_*` | On-chain persistent storage |
+//! | Event Names | `EVT_*` | Event topic[0] identifiers |
+//! | Result Status | `STATUS_*` | SLA outcome symbols |
+//! | Payment Type | `PAY_*` | Financial outcome symbols |
+//! | Rating Tier | `RATING_*` | Performance rating symbols |
+//! | Severity Level | `SEV_*` | SLA severity identifiers |
+//!
+//! # Constraints
+//!
+//! All Symbol constants must fit within Soroban's 9-character `symbol_short!`
+//! limit. Constants exceeding this length must use `Symbol::new()` instead.
+
 use soroban_sdk::{symbol_short, Symbol};
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
